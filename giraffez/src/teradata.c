@@ -177,7 +177,7 @@ TeradataConnection* teradata_connect(const char *host, const char *username,
     conn->dbc->func = DBFCON;
     if (logon_mech != NULL) {
         snprintf(conn->dbc->logmech_name, sizeof(conn->dbc->logmech_name), "%-*s",
-            (int)(sizeof(conn->dbc->logmech_name)-strlen(logon_mech)), logon_mech);
+            (int)(sizeof(conn->dbc->logmech_name)), logon_mech); // @RYANMERLIN removed -strlen(logon_mech) -- https://github.com/capitalone/giraffez/issues/52
         if (logon_mech_data != NULL) {
             sprintf(conn->dbc->logmech_data_ptr, "%s", logon_mech_data);
             conn->dbc->logmech_data_len = (UInt32)strlen(conn->dbc->logmech_data_ptr);
