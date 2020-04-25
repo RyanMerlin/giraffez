@@ -26,7 +26,7 @@ from ._teradata import Cmd as _Cmd, RequestEnded, StatementEnded, StatementInfoE
 from .connection import Connection, Context
 from .encoders import check_input, null_handler, python_to_sql
 from .fmt import format_indent, truncate
-from .io import CSVReader, JSONReader, Reader, isfile
+from .io import CSVReader, JSONReader, Reader, isfile, file_exists
 from .logging import log
 from .sql import parse_statement, prepare_statement, Statement
 from .types import Columns, Row
@@ -393,6 +393,73 @@ class TeradataCmd(Connection):
             elif isinstance(f, JSONReader):
                 self.options("encoding", "json", 1)
             return self._insert(table_name, rows, f.header, parse_dates)
+
+    def find_column(self, object_name, exact=False, silent=False):
+        """
+        Query DBC.TABLES to find objects that contain columns :code:`object_name` exists, by executing a :code:`show table object_name` query, 
+
+        :param str object_name: The name of the object to search for.
+        :param bool silent: Silence console logging (within this function only)
+        :return: a cursor over the results of each statement in the command
+        :rtype: :class:`~giraffez.cmd.Cursor`
+        """
+        if not exact:
+            _search_string = '%{}%'.format(object_name)
+        else:
+            _search_string = object_name
+
+        return self.execute("""\
+                SELECT TBL.DATABASENAME, TBL.TABLENAME
+                FROM DBC.TABLES TBL
+                    INNER JOIN DBC.COLUMNS CLM
+                        ON TBL.DATABASENAME=CLM.DATABASENAME
+                        AND TBL.TABLENAME=CLM.TABLENAME
+                WHERE tablekind in ('T','V')
+                AND columnname like any ('{}')
+                ;""".format(_search_string), silent=silent) 
+
+
+    def find_table(self, object_name, exact=False, silent=False):
+        """
+        Query DBC.TABLES to find object (table or view) :code:`object_name` exists, by executing a :code:`show table object_name` query, 
+        followed by a :code:`show view object_name` query if :code:`object_name` is not a table.
+
+        :param str object_name: The name of the object to search for.
+        :param bool silent: Silence console logging (within this function only)
+        :return: a cursor over the results of each statement in the command
+        :rtype: :class:`~giraffez.cmd.Cursor`
+        """
+        if not exact:
+            _search_string = '%{}%'.format(object_name)
+        else:
+            _search_string = object_name
+
+        return self.execute("""\
+                SELECT DATABASENAME, TABLENAME, tablekind, journalflag, creatorname, createtimestamp, lastaltertimestamp
+                FROM DBC.TABLES 
+                WHERE tablekind in ('V','T')
+                AND tablename like '{}'
+                ;""".format(_search_string), silent=silent)
+
+
+    def execute_file(self, file_loc, silent=False):
+        """
+        Execute query from SQL File 
+        :param str file_loc: The file to read SQL statements.
+        :param bool silent: Silence console logging (within this function only)
+        :return: a cursor over the results of each statement in the command
+        :rtype: :class:`~giraffez.cmd.Cursor`
+        """
+        try:
+            with open(file_loc, 'r') as f:
+                self.sql_stmt = f.read()
+        except GiraffeError as error:
+            if self.panic:
+                raise error
+        if not file_exists(file_loc):
+            raise FileNotFound(("SQL file '{}' does not exist").format(file_loc))
+            
+        return self.execute(self.sql_stmt, silent=silent) 
 
     def _close(self, exc=None):
         if getattr(self, 'cmd', None):
